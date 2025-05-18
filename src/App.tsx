@@ -28,18 +28,20 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/instructor-dashboard" element={<InstructorDashboardPage />} />
-            <Route path="/courses" element={<CoursesPage />} />
-            <Route path="/courses/:courseId" element={<CourseDetailPage />} />
-            <Route path="/courses/:courseId/quiz/:quizId" element={<CourseQuizPage />} />
-            <Route path="/about" element={<About />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/instructor-dashboard" element={<InstructorDashboardPage />} />
+              <Route path="/courses" element={<CoursesPage />} />
+              <Route path="/courses/:courseId" element={<CourseDetailPage />} />
+              <Route path="/courses/:courseId/quiz/:quizId" element={<CourseQuizPage />} />
+              <Route path="/about" element={<About />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
         </TooltipProvider>
       </CourseProvider>
     </AuthProvider>
