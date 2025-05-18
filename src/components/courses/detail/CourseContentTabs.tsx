@@ -53,6 +53,38 @@ const CourseContentTabs: React.FC<CourseContentTabsProps> = ({
         </TabsList>
         
         <TabsContent value="content" className="mt-0">
+          {/* Lecture video player */}
+          {activeLecture && (
+            <div className="mb-6">
+              <div className="aspect-video bg-black rounded-lg overflow-hidden mb-4">
+                {activeLecture.videoUrl ? (
+                  activeLecture.videoUrl.includes('youtube.com') || activeLecture.videoUrl.includes('youtu.be') ? (
+                    <iframe 
+                      src={activeLecture.videoUrl}
+                      className="w-full h-full"
+                      allowFullScreen
+                      title={activeLecture.title}
+                    ></iframe>
+                  ) : (
+                    <video 
+                      src={activeLecture.videoUrl} 
+                      controls 
+                      className="w-full h-full"
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                  )
+                ) : (
+                  <div className="flex items-center justify-center h-full bg-gray-100">
+                    <p className="text-gray-500">No video available for this lecture</p>
+                  </div>
+                )}
+              </div>
+              <h2 className="text-xl font-bold mb-2">{activeLecture.title}</h2>
+              <p className="text-gray-700 mb-4">{activeLecture.description}</p>
+            </div>
+          )}
+          
           <CourseContent 
             course={course} 
             isEnrolled={isEnrolled} 

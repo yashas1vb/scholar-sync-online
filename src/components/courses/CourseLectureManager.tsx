@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Course, Lecture, useCourses } from '@/context/CourseContext';
 import { Button } from "@/components/ui/button";
 import { useToast } from '@/components/ui/use-toast';
-import { Pencil, Plus, Trash2, FileUp } from 'lucide-react';
+import { Pencil, Plus, Trash2, FileUp, Video } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -97,11 +97,17 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
               key={lecture.id} 
               className="border rounded-md p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
             >
-              <div>
-                <h4 className="font-medium">{lecture.title}</h4>
-                <p className="text-sm text-gray-500 mt-1">
-                  {lecture.resources.length} resources
-                </p>
+              <div className="flex items-center gap-3">
+                <div className="bg-gray-100 p-2 rounded-md">
+                  <Video size={20} className="text-gray-500" />
+                </div>
+                <div>
+                  <h4 className="font-medium">{lecture.title}</h4>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {lecture.resources.length} resources
+                    {lecture.videoUrl && <span className="ml-2">• Has video</span>}
+                  </p>
+                </div>
               </div>
               
               <div className="flex space-x-2">
@@ -128,7 +134,7 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
       ) : (
         <div className="text-center py-12 border border-dashed rounded-md">
           <div className="mb-4">
-            <FileUp size={40} className="mx-auto text-gray-400" />
+            <Video size={40} className="mx-auto text-gray-400" />
           </div>
           <h4 className="text-lg font-medium mb-2">No lectures yet</h4>
           <p className="text-gray-500 mb-4">Add your first lecture to this course</p>
