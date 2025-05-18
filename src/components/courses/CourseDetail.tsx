@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Course, Lecture } from '@/context/CourseContext';
 import { Button } from '@/components/ui/button';
@@ -7,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CourseContent from '@/components/courses/CourseContent';
 import CourseDiscussion from '@/components/forum/CourseDiscussion';
 import QuizList from '@/components/quiz/QuizList';
+import CourseChat from '@/components/chat/CourseChat';
 
 interface CourseDetailProps {
   course: Course;
@@ -99,6 +99,7 @@ const CourseDetail: React.FC<CourseDetailProps> = ({
                 <TabsTrigger value="content">Course Content</TabsTrigger>
                 <TabsTrigger value="discussion">Discussion</TabsTrigger>
                 <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
+                <TabsTrigger value="chat">Live Chat</TabsTrigger>
               </TabsList>
               
               <TabsContent value="content" className="mt-0">
@@ -123,6 +124,24 @@ const CourseDetail: React.FC<CourseDetailProps> = ({
                   courseId={course.id}
                   isEnrolled={isEnrolled}
                 />
+              </TabsContent>
+              
+              <TabsContent value="chat" className="mt-0">
+                {isEnrolled ? (
+                  <CourseChat 
+                    courseId={course.id} 
+                    instructorId={course.instructorId}
+                    instructorName={course.instructorName}
+                  />
+                ) : (
+                  <div className="text-center p-12 border border-dashed rounded-lg">
+                    <h3 className="text-lg font-medium mb-2">Chat is available for enrolled students</h3>
+                    <p className="text-gray-500 mb-4">
+                      Enroll in this course to chat with the instructor and other students
+                    </p>
+                    <Button onClick={onEnroll}>Enroll Now</Button>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </div>
@@ -210,6 +229,13 @@ const CourseDetail: React.FC<CourseDetailProps> = ({
                       <circle cx="15" cy="7" r="1"/>
                     </svg>
                     <span>Certificate of completion</span>
+                  </li>
+                  <li className="flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-500">
+                      <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v5Z"/>
+                      <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>
+                    </svg>
+                    <span>Live chat with instructor</span>
                   </li>
                 </ul>
               </div>

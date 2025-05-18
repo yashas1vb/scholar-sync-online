@@ -15,6 +15,7 @@ import Register from "./pages/auth/Register";
 import Dashboard from "./pages/Dashboard";
 import CoursesPage from "./pages/courses/CoursesPage";
 import CourseDetailPage from "./pages/courses/CourseDetailPage";
+import CourseEditPage from "./pages/courses/CourseEditPage";
 import CourseQuizPage from "./pages/courses/CourseQuizPage";
 import InstructorDashboardPage from "./pages/instructor/InstructorDashboardPage";
 import About from "./pages/About";
@@ -37,6 +38,7 @@ const App = () => (
               <Route path="/instructor-dashboard" element={<InstructorDashboardPage />} />
               <Route path="/courses" element={<CoursesPage />} />
               <Route path="/courses/:courseId" element={<CourseDetailPage />} />
+              <Route path="/courses/:courseId/edit" element={<CourseEditPage />} />
               <Route path="/courses/:courseId/quiz/:quizId" element={<CourseQuizPage />} />
               <Route path="/about" element={<About />} />
               <Route path="*" element={<NotFound />} />

@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 
@@ -48,6 +47,9 @@ interface CourseContextType {
   enrollInCourse: (courseId: string, studentId: string) => Promise<void>;
   getInstructorCourses: (instructorId: string) => Course[];
   getEnrolledCourses: (studentId: string) => Course[];
+  addLecture: (courseId: string, lectureData: Omit<Lecture, 'id'>) => Promise<Lecture>;
+  updateLecture: (courseId: string, lectureId: string, lectureData: Partial<Lecture>) => Promise<Lecture>;
+  deleteLecture: (courseId: string, lectureId: string) => Promise<void>;
 }
 
 const defaultContext: CourseContextType = {
@@ -59,6 +61,9 @@ const defaultContext: CourseContextType = {
   enrollInCourse: async () => {},
   getInstructorCourses: () => [],
   getEnrolledCourses: () => [],
+  addLecture: async () => ({ id: '', title: '', description: '', videoUrl: '', resources: [] }),
+  updateLecture: async () => ({ id: '', title: '', description: '', videoUrl: '', resources: [] }),
+  deleteLecture: async () => {},
 };
 
 const CourseContext = createContext<CourseContextType>(defaultContext);
@@ -363,6 +368,126 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
     }
   };
 
+  // New methods for lecture management
+  const addLecture = async (courseId: string, lectureData: Omit<Lecture, 'id'>): Promise<Lecture> => {
+    setIsLoading(true);
+    try {
+      const newLecture: Lecture = {
+        ...lectureData,
+        id: Math.random().toString(36).substring(2, 9),
+      };
+      
+      const updatedCourses = courses.map(course => {
+        if (course.id === courseId) {
+          return {
+            ...course,
+            lectures: [...course.lectures, newLecture]
+          };
+        }
+        return course;
+      });
+      
+      setCourses(updatedCourses);
+      
+      toast({
+        title: "Lecture added",
+        description: "The lecture has been added to your course",
+      });
+      
+      return newLecture;
+    } catch (error) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to add lecture",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const updateLecture = async (courseId: string, lectureId: string, lectureData: Partial<Lecture>): Promise<Lecture> => {
+    setIsLoading(true);
+    try {
+      let updatedLecture: Lecture | null = null;
+      
+      const updatedCourses = courses.map(course => {
+        if (course.id === courseId) {
+          const updatedLectures = course.lectures.map(lecture => {
+            if (lecture.id === lectureId) {
+              updatedLecture = { ...lecture, ...lectureData };
+              return updatedLecture;
+            }
+            return lecture;
+          });
+          
+          return {
+            ...course,
+            lectures: updatedLectures
+          };
+        }
+        return course;
+      });
+      
+      setCourses(updatedCourses);
+      
+      if (!updatedLecture) {
+        throw new Error('Lecture not found');
+      }
+      
+      toast({
+        title: "Lecture updated",
+        description: "The lecture has been updated",
+      });
+      
+      return updatedLecture;
+    } catch (error) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update lecture",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const deleteLecture = async (courseId: string, lectureId: string): Promise<void> => {
+    setIsLoading(true);
+    try {
+      const updatedCourses = courses.map(course => {
+        if (course.id === courseId) {
+          return {
+            ...course,
+            lectures: course.lectures.filter(lecture => lecture.id !== lectureId)
+          };
+        }
+        return course;
+      });
+      
+      setCourses(updatedCourses);
+      
+      toast({
+        title: "Lecture deleted",
+        description: "The lecture has been deleted from your course",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to delete lecture",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getInstructorCourses = (instructorId: string): Course[] => {
     return courses.filter(course => course.instructorId === instructorId);
   };
@@ -381,7 +506,10 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         deleteCourse,
         enrollInCourse,
         getInstructorCourses,
-        getEnrolledCourses
+        getEnrolledCourses,
+        addLecture,
+        updateLecture,
+        deleteLecture
       }}
     >
       {children}
