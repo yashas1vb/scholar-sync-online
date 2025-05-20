@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from '@/components/ui/use-toast';
 import VideoUploader from './lecture/VideoUploader';
 import ResourceManager, { Resource } from './lecture/ResourceManager';
+import { supabase } from "@/integrations/supabase/client";
 
 const lectureFormSchema = z.object({
   title: z.string().min(3, { message: "Title must be at least 3 characters long" }),
@@ -33,6 +34,7 @@ interface LectureFormProps {
 const LectureForm: React.FC<LectureFormProps> = ({ courseId, onSuccess, onCancel }) => {
   const { toast } = useToast();
   const [resources, setResources] = useState<Resource[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<z.infer<typeof lectureFormSchema>>({
     resolver: zodResolver(lectureFormSchema),
@@ -44,9 +46,42 @@ const LectureForm: React.FC<LectureFormProps> = ({ courseId, onSuccess, onCancel
   });
 
   const onSubmit = async (values: z.infer<typeof lectureFormSchema>) => {
+    if (!values.videoUrl) {
+      toast({
+        variant: "destructive",
+        title: "Video required",
+        description: "Please upload or provide a URL for the lecture video",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    
     try {
-      // In a production app, this would be an API call to Supabase
-      console.log("Submitting lecture data:", { ...values, resources, courseId });
+      // Create a new lecture entry in Supabase
+      // For now, this will save to the videos table
+      const { data, error } = await supabase
+        .from('videos')
+        .insert([
+          {
+            title: values.title,
+            description: values.description,
+            video_url: values.videoUrl,
+            module_id: null, // This would need to be set properly in a real implementation
+            position: 0, // This would need to be calculated based on existing lectures
+            duration: 0, // This would need to be calculated from the video
+          }
+        ])
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      // If we have any resources, we'd store them in a related table
+      // For demonstration, we'll log them for now
+      console.log("Lecture data saved:", data);
+      console.log("Resources to save:", resources);
       
       toast({
         title: "Lecture added",
@@ -61,8 +96,10 @@ const LectureForm: React.FC<LectureFormProps> = ({ courseId, onSuccess, onCancel
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to add lecture to the course",
+        description: error instanceof Error ? error.message : "Failed to add lecture to the course",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -124,7 +161,9 @@ const LectureForm: React.FC<LectureFormProps> = ({ courseId, onSuccess, onCancel
               Cancel
             </Button>
           )}
-          <Button type="submit">Add Lecture</Button>
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Adding Lecture..." : "Add Lecture"}
+          </Button>
         </div>
       </form>
     </Form>

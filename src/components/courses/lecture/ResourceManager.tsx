@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from "@/integrations/supabase/client";
+import { Paperclip, Upload, FileText, Trash2 } from 'lucide-react';
 
 export interface Resource {
   id: string;
@@ -19,30 +21,103 @@ interface ResourceManagerProps {
 const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }) => {
   const { toast } = useToast();
   const [resourceName, setResourceName] = useState('');
-  const [resourceUrl, setResourceUrl] = useState('');
+  const [resourceFile, setResourceFile] = useState<File | null>(null);
   const [resourceType, setResourceType] = useState<'pdf' | 'assignment' | 'other'>('pdf');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   
-  const addResource = () => {
-    if (!resourceName || !resourceUrl) {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      // Check file size (limit to 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Resource file must be less than 10MB",
+          variant: "destructive",
+        });
+        return;
+      }
+      setResourceFile(file);
+      // Use filename as resource name if not provided
+      if (!resourceName) {
+        setResourceName(file.name.split('.')[0]);
+      }
+    }
+  };
+  
+  const uploadResource = async () => {
+    if (!resourceFile || !resourceName) {
       toast({
         title: "Missing information",
-        description: "Please provide both name and URL for the resource",
+        description: "Please provide both name and file for the resource",
         variant: "destructive",
       });
       return;
     }
+    
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    try {
+      // Create a unique file path for the resource
+      const fileExt = resourceFile.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+      
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('course_pdfs')
+        .upload(filePath, resourceFile, {
+          cacheControl: '3600',
+          upsert: false,
+          onUploadProgress: (progress) => {
+            const calculatedProgress = (progress.loaded / progress.total) * 100;
+            setUploadProgress(calculatedProgress);
+          },
+        });
 
-    const newResource: Resource = {
-      id: Math.random().toString(36).substring(2, 9),
-      name: resourceName,
-      fileUrl: resourceUrl,
-      type: resourceType,
-    };
+      if (error) {
+        throw error;
+      }
 
-    const updatedResources = [...resources, newResource];
-    onChange(updatedResources);
-    setResourceName('');
-    setResourceUrl('');
+      // Get the public URL for the uploaded resource
+      const { data: publicUrlData } = supabase.storage
+        .from('course_pdfs')
+        .getPublicUrl(filePath);
+
+      const resourcePublicUrl = publicUrlData.publicUrl;
+      
+      // Add to resources list
+      const newResource: Resource = {
+        id: Math.random().toString(36).substring(2, 9),
+        name: resourceName,
+        fileUrl: resourcePublicUrl,
+        type: resourceType,
+      };
+
+      const updatedResources = [...resources, newResource];
+      onChange(updatedResources);
+      
+      // Reset form
+      setResourceName('');
+      setResourceFile(null);
+      
+      toast({
+        title: "Resource uploaded successfully",
+        description: "Your resource has been added to the lecture",
+      });
+      
+    } catch (error) {
+      console.error("Upload error:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "There was an error uploading your resource",
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const removeResource = (id: string) => {
@@ -76,14 +151,37 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
           </div>
           <div>
             <Input
-              placeholder="Resource URL"
-              value={resourceUrl}
-              onChange={(e) => setResourceUrl(e.target.value)}
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              onChange={handleFileChange}
+              disabled={isUploading}
             />
           </div>
         </div>
-        <Button type="button" variant="outline" onClick={addResource}>
-          Add Resource
+        
+        {resourceFile && (
+          <p className="text-sm text-gray-600">
+            Selected file: {resourceFile.name} ({(resourceFile.size / (1024 * 1024)).toFixed(2)} MB)
+          </p>
+        )}
+        
+        {isUploading && (
+          <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
+            <div 
+              className="bg-lms-indigo h-full transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
+          </div>
+        )}
+        
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={uploadResource}
+          disabled={isUploading || !resourceFile || !resourceName}
+        >
+          <Upload className="mr-2" size={16} />
+          Upload Resource
         </Button>
       </div>
       
@@ -96,19 +194,32 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
                 key={resource.id} 
                 className="flex items-center justify-between bg-muted p-2 rounded-md"
               >
-                <div>
-                  <span className="font-medium">{resource.name}</span>
-                  <span className="text-sm text-muted-foreground ml-2">
-                    ({resource.type})
-                  </span>
+                <div className="flex items-center">
+                  <FileText size={16} className="mr-2 text-gray-500" />
+                  <div>
+                    <span className="font-medium">{resource.name}</span>
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({resource.type})
+                    </span>
+                  </div>
                 </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => removeResource(resource.id)}
-                >
-                  Remove
-                </Button>
+                <div className="flex items-center space-x-2">
+                  <a 
+                    href={resource.fileUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    View
+                  </a>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => removeResource(resource.id)}
+                  >
+                    <Trash2 size={16} />
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

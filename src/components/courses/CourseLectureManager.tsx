@@ -1,9 +1,9 @@
 
-import React, { useState } from 'react';
-import { Course, Lecture, useCourses } from '@/context/CourseContext';
+import React, { useState, useEffect } from 'react';
+import { Course } from '@/context/CourseContext';
 import { Button } from "@/components/ui/button";
 import { useToast } from '@/components/ui/use-toast';
-import { Pencil, Plus, Trash2, FileUp, Video } from 'lucide-react';
+import { Pencil, Plus, Trash2, FileUp, Video, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -12,45 +12,114 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import LectureForm from './LectureForm';
+import { supabase } from "@/integrations/supabase/client";
+
+interface Lecture {
+  id: string;
+  title: string;
+  description?: string;
+  video_url: string;
+  position: number;
+  resources: any[];
+  module_id?: string | null;
+}
 
 interface CourseLectureManagerProps {
   course: Course;
 }
 
 const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) => {
-  const { updateCourse, isLoading } = useCourses();
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
-  const addLecture = async (lecture: Lecture) => {
+  // Fetch lectures from Supabase
+  useEffect(() => {
+    const fetchLectures = async () => {
+      try {
+        // For demonstration, we'll fetch all videos
+        // In a real implementation, you would filter by module_id related to the course
+        const { data, error } = await supabase
+          .from('videos')
+          .select('*')
+          .order('position', { ascending: true });
+        
+        if (error) {
+          throw error;
+        }
+        
+        // Transform the data to match our lecture interface
+        const fetchedLectures = data.map(video => ({
+          id: video.id,
+          title: video.title,
+          description: video.description,
+          video_url: video.video_url,
+          position: video.position,
+          resources: [], // We would fetch resources in a real implementation
+          module_id: video.module_id
+        }));
+        
+        setLectures(fetchedLectures);
+      } catch (error) {
+        console.error('Error fetching lectures:', error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load lectures",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchLectures();
+  }, [toast]);
+  
+  const addLecture = async () => {
+    setIsDialogOpen(false);
+    // The lecture will be added via the LectureForm component
+    // We'll refresh the list after a successful addition
     try {
-      // In a real app, this would be an API call to Supabase
-      await updateCourse(course.id, {
-        lectures: [...course.lectures, lecture]
-      });
+      const { data, error } = await supabase
+        .from('videos')
+        .select('*')
+        .order('position', { ascending: true });
       
-      toast({
-        title: "Lecture added",
-        description: "The lecture has been added to your course",
-      });
+      if (error) {
+        throw error;
+      }
       
-      setIsDialogOpen(false);
+      // Transform the data to match our lecture interface
+      const fetchedLectures = data.map(video => ({
+        id: video.id,
+        title: video.title,
+        description: video.description,
+        video_url: video.video_url,
+        position: video.position,
+        resources: [], // We would fetch resources in a real implementation
+        module_id: video.module_id
+      }));
+      
+      setLectures(fetchedLectures);
     } catch (error) {
-      console.error("Failed to add lecture:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to add lecture to the course",
-      });
+      console.error('Error refreshing lectures:', error);
     }
   };
   
   const removeLecture = async (lectureId: string) => {
     if (window.confirm("Are you sure you want to delete this lecture?")) {
       try {
-        await updateCourse(course.id, {
-          lectures: course.lectures.filter(l => l.id !== lectureId)
-        });
+        const { error } = await supabase
+          .from('videos')
+          .delete()
+          .eq('id', lectureId);
+        
+        if (error) {
+          throw error;
+        }
+        
+        setLectures(lectures.filter(l => l.id !== lectureId));
         
         toast({
           title: "Lecture removed",
@@ -84,15 +153,20 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
             </DialogHeader>
             <LectureForm 
               courseId={course.id} 
-              onSuccess={() => setIsDialogOpen(false)} 
+              onSuccess={addLecture} 
             />
           </DialogContent>
         </Dialog>
       </div>
       
-      {course.lectures.length > 0 ? (
+      {isLoading ? (
+        <div className="text-center py-12">
+          <Loader2 size={40} className="mx-auto animate-spin text-gray-400" />
+          <p className="mt-4 text-gray-500">Loading lectures...</p>
+        </div>
+      ) : lectures.length > 0 ? (
         <div className="space-y-3">
-          {course.lectures.map((lecture) => (
+          {lectures.map((lecture) => (
             <div 
               key={lecture.id} 
               className="border rounded-md p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
@@ -105,7 +179,7 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
                   <h4 className="font-medium">{lecture.title}</h4>
                   <p className="text-sm text-gray-500 mt-1">
                     {lecture.resources.length} resources
-                    {lecture.videoUrl && <span className="ml-2">• Has video</span>}
+                    {lecture.video_url && <span className="ml-2">• Has video</span>}
                   </p>
                 </div>
               </div>
@@ -148,7 +222,7 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
               </DialogHeader>
               <LectureForm 
                 courseId={course.id} 
-                onSuccess={() => setIsDialogOpen(false)} 
+                onSuccess={addLecture} 
               />
             </DialogContent>
           </Dialog>

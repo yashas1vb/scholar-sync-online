@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { FormControl, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Upload, Video } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from "@/integrations/supabase/client";
 
 interface VideoUploaderProps {
   onChange: (url: string) => void;
@@ -40,30 +41,37 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
     setIsUploading(true);
     setVideoUploadProgress(0);
     
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setVideoUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 95;
-        }
-        return prev + 5;
-      });
-    }, 300);
-
     try {
-      // In a production app with Supabase, we would upload the file here
-      // For demo purposes, we'll simulate the upload
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Create a unique file path for the video
+      const fileExt = videoFile.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
       
-      // Generate a mock URL that would come from Supabase Storage
-      const mockVideoUrl = `https://example.com/videos/${videoFile.name}`;
-      
-      setVideoUrl(mockVideoUrl);
-      onChange(mockVideoUrl);
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('course_videos')
+        .upload(filePath, videoFile, {
+          cacheControl: '3600',
+          upsert: false,
+          onUploadProgress: (progress) => {
+            const calculatedProgress = (progress.loaded / progress.total) * 100;
+            setVideoUploadProgress(calculatedProgress);
+          },
+        });
 
-      clearInterval(interval);
-      setVideoUploadProgress(100);
+      if (error) {
+        throw error;
+      }
+
+      // Get the public URL for the uploaded video
+      const { data: publicUrlData } = supabase.storage
+        .from('course_videos')
+        .getPublicUrl(filePath);
+
+      const videoPublicUrl = publicUrlData.publicUrl;
+      
+      setVideoUrl(videoPublicUrl);
+      onChange(videoPublicUrl);
       
       toast({
         title: "Video uploaded successfully",
@@ -72,16 +80,16 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
 
       setTimeout(() => {
         setIsUploading(false);
-        setVideoUploadProgress(0);
       }, 1000);
     } catch (error) {
       console.error("Upload error:", error);
       toast({
         variant: "destructive",
         title: "Upload failed",
-        description: "There was an error uploading your video",
+        description: error instanceof Error ? error.message : "There was an error uploading your video",
       });
       setIsUploading(false);
+      setVideoUploadProgress(0);
     }
   };
 
