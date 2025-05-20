@@ -47,17 +47,22 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
       const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
       const filePath = `${fileName}`;
       
+      // Set up a progress tracking function
+      const trackProgress = (progress: { loaded: number; total: number }) => {
+        const calculatedProgress = (progress.loaded / progress.total) * 100;
+        setVideoUploadProgress(calculatedProgress);
+      };
+
       // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('course_videos')
         .upload(filePath, videoFile, {
           cacheControl: '3600',
-          upsert: false,
-          onUploadProgress: (progress) => {
-            const calculatedProgress = (progress.loaded / progress.total) * 100;
-            setVideoUploadProgress(calculatedProgress);
-          },
+          upsert: false
         });
+
+      // Manually update progress to 100% when upload completes
+      setVideoUploadProgress(100);
 
       if (error) {
         throw error;
