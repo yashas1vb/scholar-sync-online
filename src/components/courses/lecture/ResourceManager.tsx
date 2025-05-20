@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -56,7 +57,7 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
     }
     
     setIsUploading(true);
-    setUploadProgress(0);
+    setUploadProgress(10);
     
     try {
       // Create a unique file path for the resource
@@ -64,7 +65,7 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
       const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
       const filePath = `${fileName}`;
       
-      // Upload to Supabase Storage without onUploadProgress
+      // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('course_pdfs')
         .upload(filePath, resourceFile, {
@@ -106,6 +107,10 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
         description: "Your resource has been added to the lecture",
       });
       
+      setTimeout(() => {
+        setIsUploading(false);
+      }, 1000);
+      
     } catch (error) {
       console.error("Upload error:", error);
       toast({
@@ -113,8 +118,8 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
         title: "Upload failed",
         description: error instanceof Error ? error.message : "There was an error uploading your resource",
       });
-    } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
