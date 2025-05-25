@@ -1,10 +1,12 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import type { User, Session } from '@supabase/supabase-js';
 
 export type UserRole = 'student' | 'instructor';
 
-export interface User {
+export interface AuthUser {
   id: string;
   email: string;
   name: string;
@@ -13,7 +15,8 @@ export interface User {
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
+  session: Session | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string, role: UserRole) => Promise<void>;
@@ -22,6 +25,7 @@ interface AuthContextType {
 
 const defaultContext: AuthContextType = {
   user: null,
+  session: null,
   isLoading: true,
   login: async () => {},
   register: async () => {},
@@ -37,63 +41,76 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
-  // Mock user data for development
-  const mockUsers = [
-    {
-      id: '1',
-      email: 'student@example.com',
-      password: 'password123',
-      name: 'John Student',
-      role: 'student' as UserRole,
-      avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John'
-    },
-    {
-      id: '2',
-      email: 'instructor@example.com',
-      password: 'password123',
-      name: 'Jane Instructor',
-      role: 'instructor' as UserRole,
-      avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jane'
-    }
-  ];
-
   useEffect(() => {
-    // Check for saved user in local storage
-    const savedUser = localStorage.getItem('lmsUser');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setIsLoading(false);
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event, session);
+        setSession(session);
+        
+        if (session?.user) {
+          // Fetch user profile from profiles table
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (profile) {
+            setUser({
+              id: session.user.id,
+              email: session.user.email || '',
+              name: profile.full_name,
+              role: profile.role as UserRole,
+              avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.full_name}`
+            });
+          }
+        } else {
+          setUser(null);
+        }
+        
+        setIsLoading(false);
+      }
+    );
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        console.log('Initial session found:', session);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // This is a mock implementation - would use Supabase in production
-      const foundUser = mockUsers.find(u => u.email === email && u.password === password);
-      
-      if (foundUser) {
-        // Remove password before storing user
-        const { password, ...secureUser } = foundUser;
-        setUser(secureUser);
-        localStorage.setItem('lmsUser', JSON.stringify(secureUser));
-        toast({
-          title: "Login successful",
-          description: `Welcome back, ${secureUser.name}!`,
-        });
-      } else {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
         toast({
           variant: "destructive",
           title: "Login failed",
-          description: "Invalid email or password",
+          description: error.message,
         });
+        return;
       }
+
+      toast({
+        title: "Login successful",
+        description: "Welcome back!",
+      });
     } catch (error) {
-      console.error(error);
+      console.error('Login error:', error);
       toast({
         variant: "destructive",
         title: "Login error",
@@ -107,35 +124,32 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const register = async (name: string, email: string, password: string, role: UserRole) => {
     setIsLoading(true);
     try {
-      // This is a mock implementation - would use Supabase in production
-      const userExists = mockUsers.some(u => u.email === email);
-      
-      if (userExists) {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+            role: role,
+          }
+        }
+      });
+
+      if (error) {
         toast({
           variant: "destructive",
           title: "Registration failed",
-          description: "Email already in use",
+          description: error.message,
         });
-      } else {
-        // Create a new user
-        const newUser = {
-          id: Math.random().toString(36).substring(2, 9),
-          email,
-          name,
-          role,
-          avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
-        };
-        
-        setUser(newUser);
-        localStorage.setItem('lmsUser', JSON.stringify(newUser));
-        
-        toast({
-          title: "Registration successful",
-          description: "Your account has been created",
-        });
+        return;
       }
+
+      toast({
+        title: "Registration successful",
+        description: "Your account has been created successfully!",
+      });
     } catch (error) {
-      console.error(error);
+      console.error('Registration error:', error);
       toast({
         variant: "destructive",
         title: "Registration error",
@@ -147,17 +161,34 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const logout = async () => {
-    // This is a mock implementation - would use Supabase in production
-    localStorage.removeItem('lmsUser');
-    setUser(null);
-    toast({
-      title: "Logged out",
-      description: "You have been logged out successfully",
-    });
+    try {
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        toast({
+          variant: "destructive",
+          title: "Logout error",
+          description: error.message,
+        });
+        return;
+      }
+
+      toast({
+        title: "Logged out",
+        description: "You have been logged out successfully",
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast({
+        variant: "destructive",
+        title: "Logout error",
+        description: "An error occurred during logout",
+      });
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, session, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

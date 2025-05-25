@@ -101,14 +101,6 @@ const LoginForm = () => {
             )}
           />
           
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <a href="#" className="text-lms-blue hover:underline">
-                Forgot password?
-              </a>
-            </div>
-          </div>
-          
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? "Signing in..." : "Sign in"}
           </Button>
@@ -122,31 +114,6 @@ const LoginForm = () => {
             Sign up
           </a>
         </p>
-      </div>
-      
-      {/* Demo accounts */}
-      <div className="mt-8 border-t pt-6">
-        <p className="text-sm text-gray-600 text-center mb-3">Demo accounts</p>
-        <div className="grid grid-cols-1 gap-3">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              form.setValue("email", "student@example.com");
-              form.setValue("password", "password123");
-            }}
-          >
-            Use Student Demo
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              form.setValue("email", "instructor@example.com");
-              form.setValue("password", "password123");
-            }}
-          >
-            Use Instructor Demo
-          </Button>
-        </div>
       </div>
     </div>
   );
