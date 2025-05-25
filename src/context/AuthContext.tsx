@@ -55,11 +55,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         
         if (session?.user) {
           // Fetch user profile from profiles table
-          const { data: profile } = await supabase
+          const { data: profile, error } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', session.user.id)
             .single();
+          
+          if (error) {
+            console.error('Error fetching profile:', error);
+          }
           
           if (profile) {
             setUser({
@@ -102,7 +106,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           title: "Login failed",
           description: error.message,
         });
-        return;
+        throw error;
       }
 
       toast({
@@ -111,11 +115,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       });
     } catch (error) {
       console.error('Login error:', error);
-      toast({
-        variant: "destructive",
-        title: "Login error",
-        description: "An error occurred during login",
-      });
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -141,7 +141,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           title: "Registration failed",
           description: error.message,
         });
-        return;
+        throw error;
       }
 
       toast({
@@ -150,11 +150,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       });
     } catch (error) {
       console.error('Registration error:', error);
-      toast({
-        variant: "destructive",
-        title: "Registration error",
-        description: "An error occurred during registration",
-      });
+      throw error;
     } finally {
       setIsLoading(false);
     }
