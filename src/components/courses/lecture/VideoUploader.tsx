@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FormControl, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Upload, Video } from 'lucide-react';
+import { Upload, Video, AlertCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from "@/integrations/supabase/client";
 
@@ -19,18 +19,34 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
   const [videoUploadProgress, setVideoUploadProgress] = useState(0);
   const [videoUrl, setVideoUrl] = useState<string>(defaultValue);
 
+  // Maximum file size: 500MB (increased from 100MB)
+  const MAX_FILE_SIZE = 500 * 1024 * 1024;
+  const MAX_FILE_SIZE_MB = 500;
+
   const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      // Check file size (limit to 100MB)
-      if (file.size > 100 * 1024 * 1024) {
+      
+      // Check file size
+      if (file.size > MAX_FILE_SIZE) {
         toast({
           title: "File too large",
-          description: "Video file must be less than 100MB",
+          description: `Video file must be less than ${MAX_FILE_SIZE_MB}MB. Current file: ${(file.size / (1024 * 1024)).toFixed(2)}MB`,
           variant: "destructive",
         });
         return;
       }
+
+      // Check file type
+      if (!file.type.startsWith('video/')) {
+        toast({
+          title: "Invalid file type",
+          description: "Please select a valid video file",
+          variant: "destructive",
+        });
+        return;
+      }
+
       setVideoFile(file);
     }
   };
@@ -77,7 +93,7 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
       
       toast({
         title: "Video uploaded successfully",
-        description: "Your video file has been uploaded",
+        description: `Your video file (${(videoFile.size / (1024 * 1024)).toFixed(2)}MB) has been uploaded`,
       });
 
       setTimeout(() => {
@@ -100,12 +116,33 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
     onChange(e.target.value);
   };
 
+  const getVideoDurationEstimate = (file: File) => {
+    // Rough estimate: 1MB per minute for decent quality video
+    const estimatedMinutes = Math.round(file.size / (1024 * 1024));
+    return estimatedMinutes;
+  };
+
   return (
     <div className="space-y-4">
       <div className="border rounded-md p-4 bg-gray-50">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mb-3">
           <Video className="h-5 w-5 text-gray-500" />
           <h3 className="text-sm font-medium">Upload Lecture Video</h3>
+        </div>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-blue-800">
+              <p className="font-medium mb-1">Video Upload Specifications:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-xs">
+                <li>Maximum file size: {MAX_FILE_SIZE_MB}MB</li>
+                <li>Supported formats: MP4, MOV, AVI, WebM</li>
+                <li>Recommended resolution: 720p or 1080p</li>
+                <li>For longer videos, consider using YouTube and embedding the link below</li>
+              </ul>
+            </div>
+          </div>
         </div>
         
         <div className="mt-4">
@@ -139,9 +176,11 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
             )}
             
             {videoFile && (
-              <p className="text-sm text-gray-600">
-                Selected file: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(2)} MB)
-              </p>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p>Selected file: <span className="font-medium">{videoFile.name}</span></p>
+                <p>Size: <span className="font-medium">{(videoFile.size / (1024 * 1024)).toFixed(2)} MB</span></p>
+                <p>Estimated duration: <span className="font-medium">~{getVideoDurationEstimate(videoFile)} minutes</span></p>
+              </div>
             )}
           </div>
         </div>
@@ -157,7 +196,7 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
           />
         </FormControl>
         <p className="text-xs text-gray-500 mt-1">
-          Supports YouTube embed URLs. For YouTube videos, use the embed URL format:
+          Supports YouTube embed URLs, Vimeo, or direct video links. For YouTube videos, use the embed URL format:
           https://www.youtube.com/embed/VIDEO_ID
         </p>
       </div>

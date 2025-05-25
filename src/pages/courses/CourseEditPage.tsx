@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CourseForm from '@/components/courses/CourseForm';
 import CourseLectureManager from '@/components/courses/CourseLectureManager';
+import QuizManager from '@/components/quiz/QuizManager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const CourseEditPage = () => {
@@ -61,10 +62,7 @@ const CourseEditPage = () => {
               </TabsContent>
               
               <TabsContent value="quizzes">
-                <div className="text-center py-12">
-                  <h4 className="text-lg font-medium mb-2">Quiz Management</h4>
-                  <p className="text-gray-500">Quiz creation functionality coming soon</p>
-                </div>
+                <QuizManager course={course} />
               </TabsContent>
               
               <TabsContent value="chat">
