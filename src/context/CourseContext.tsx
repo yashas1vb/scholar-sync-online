@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from '@/integrations/supabase/client';
 
 export interface Quiz {
   id: string;
@@ -36,6 +37,7 @@ export interface Course {
   quizzes: Quiz[];
   enrolledStudents: string[];
   createdAt: string;
+  category: string;
 }
 
 interface CourseContextType {
@@ -55,15 +57,15 @@ interface CourseContextType {
 const defaultContext: CourseContextType = {
   courses: [],
   isLoading: false,
-  createCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '' }),
-  updateCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '' }),
-  deleteCourse: async () => {},
-  enrollInCourse: async () => {},
+  createCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '', category: '' }),
+  updateCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '', category: '' }),
+  deleteCourse: async () => { },
+  enrollInCourse: async () => { },
   getInstructorCourses: () => [],
   getEnrolledCourses: () => [],
   addLecture: async () => ({ id: '', title: '', description: '', videoUrl: '', resources: [] }),
   updateLecture: async () => ({ id: '', title: '', description: '', videoUrl: '', resources: [] }),
-  deleteLecture: async () => {},
+  deleteLecture: async () => { },
 };
 
 const CourseContext = createContext<CourseContextType>(defaultContext);
@@ -77,7 +79,7 @@ interface CourseProviderProps {
 export const CourseProvider = ({ children }: CourseProviderProps) => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  
+
   // Mock courses data
   const [courses, setCourses] = useState<Course[]>([
     {
@@ -149,7 +151,8 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
       ],
       enrolledStudents: ['1'],
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      category: 'Web Development',
     },
     {
       id: '2',
@@ -189,7 +192,8 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
       ],
       enrolledStudents: [],
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      category: 'Web Development',
     },
     {
       id: '3',
@@ -229,41 +233,56 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
       ],
       enrolledStudents: [],
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      category: 'Data Science',
     }
   ]);
 
   const createCourse = async (courseData: Partial<Course>): Promise<Course> => {
     setIsLoading(true);
     try {
-      // In production, this would be a call to Supabase
+      // Insert into Supabase
+      const { data, error } = await supabase
+        .from('courses')
+        .insert({
+          title: courseData.title,
+          description: courseData.description,
+          category: courseData.category || '',
+          instructor_id: courseData.instructorId,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      // Build the new course object for local state
       const newCourse: Course = {
-        id: Math.random().toString(36).substring(2, 9),
-        title: courseData.title || '',
-        description: courseData.description || '',
-        imageUrl: courseData.imageUrl || 'https://images.unsplash.com/photo-1593720213428-28a5b9e94613?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
-        instructorId: courseData.instructorId || '',
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        imageUrl: courseData.imageUrl || '', // Not in DB, but kept for UI compatibility
+        instructorId: data.instructor_id,
         instructorName: courseData.instructorName || '',
-        lectures: courseData.lectures || [],
-        quizzes: courseData.quizzes || [],
+        lectures: [],
+        quizzes: [],
         enrolledStudents: [],
-        createdAt: new Date().toISOString()
+        createdAt: data.created_at,
+        category: courseData.category || '',
       };
-      
       setCourses(prev => [...prev, newCourse]);
-      
       toast({
-        title: "Course created",
-        description: "Your course has been created successfully",
+        title: 'Course created',
+        description: 'Your course has been created successfully',
       });
-      
       return newCourse;
     } catch (error) {
       console.error(error);
       toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to create course",
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to create course',
       });
       throw error;
     } finally {
@@ -281,20 +300,20 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
         return course;
       });
-      
+
       setCourses(updatedCourses);
-      
+
       const updatedCourse = updatedCourses.find(course => course.id === courseId);
-      
+
       if (!updatedCourse) {
         throw new Error('Course not found');
       }
-      
+
       toast({
         title: "Course updated",
         description: "Your course has been updated successfully",
       });
-      
+
       return updatedCourse;
     } catch (error) {
       console.error(error);
@@ -314,7 +333,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
     try {
       // In production, this would be a call to Supabase
       setCourses(prev => prev.filter(course => course.id !== courseId));
-      
+
       toast({
         title: "Course deleted",
         description: "The course has been deleted successfully",
@@ -348,9 +367,9 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
         return course;
       });
-      
+
       setCourses(updatedCourses);
-      
+
       toast({
         title: "Enrollment successful",
         description: "You have been enrolled in the course",
@@ -376,7 +395,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         ...lectureData,
         id: Math.random().toString(36).substring(2, 9),
       };
-      
+
       const updatedCourses = courses.map(course => {
         if (course.id === courseId) {
           return {
@@ -386,14 +405,14 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
         return course;
       });
-      
+
       setCourses(updatedCourses);
-      
+
       toast({
         title: "Lecture added",
         description: "The lecture has been added to your course",
       });
-      
+
       return newLecture;
     } catch (error) {
       console.error(error);
@@ -407,12 +426,12 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
       setIsLoading(false);
     }
   };
-  
+
   const updateLecture = async (courseId: string, lectureId: string, lectureData: Partial<Lecture>): Promise<Lecture> => {
     setIsLoading(true);
     try {
       let updatedLecture: Lecture | null = null;
-      
+
       const updatedCourses = courses.map(course => {
         if (course.id === courseId) {
           const updatedLectures = course.lectures.map(lecture => {
@@ -422,7 +441,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
             }
             return lecture;
           });
-          
+
           return {
             ...course,
             lectures: updatedLectures
@@ -430,18 +449,18 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
         return course;
       });
-      
+
       setCourses(updatedCourses);
-      
+
       if (!updatedLecture) {
         throw new Error('Lecture not found');
       }
-      
+
       toast({
         title: "Lecture updated",
         description: "The lecture has been updated",
       });
-      
+
       return updatedLecture;
     } catch (error) {
       console.error(error);
@@ -455,7 +474,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
       setIsLoading(false);
     }
   };
-  
+
   const deleteLecture = async (courseId: string, lectureId: string): Promise<void> => {
     setIsLoading(true);
     try {
@@ -468,9 +487,9 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         }
         return course;
       });
-      
+
       setCourses(updatedCourses);
-      
+
       toast({
         title: "Lecture deleted",
         description: "The lecture has been deleted from your course",

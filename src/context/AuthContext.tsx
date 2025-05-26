@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,9 +26,9 @@ const defaultContext: AuthContextType = {
   user: null,
   session: null,
   isLoading: true,
-  login: async () => {},
-  register: async () => {},
-  logout: async () => {},
+  login: async () => { },
+  register: async () => { },
+  logout: async () => { },
 };
 
 const AuthContext = createContext<AuthContextType>(defaultContext);
@@ -46,50 +45,116 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
+  // Test Supabase connection
+  const testConnection = async () => {
+    try {
+      const { data, error } = await supabase.from('profiles').select('count').limit(1);
+      if (error) {
+        console.error('Supabase connection test failed:', error);
+        toast({
+          variant: "destructive",
+          title: "Connection Error",
+          description: "Unable to connect to the database. Please check your internet connection.",
+        });
+        return false;
+      }
+      console.log('Supabase connection test successful');
+      return true;
+    } catch (error) {
+      console.error('Supabase connection test error:', error);
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: "Failed to connect to the database. Please try again later.",
+      });
+      return false;
+    }
+  };
+
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event, session);
-        setSession(session);
-        
-        if (session?.user) {
-          // Fetch user profile from profiles table
-          const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (error) {
-            console.error('Error fetching profile:', error);
-          }
-          
-          if (profile) {
-            setUser({
-              id: session.user.id,
-              email: session.user.email || '',
-              name: profile.full_name,
-              role: profile.role as UserRole,
-              avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.full_name}`
-            });
-          }
-        } else {
-          setUser(null);
-        }
-        
+    // Test connection first
+    testConnection().then(isConnected => {
+      if (!isConnected) {
         setIsLoading(false);
+        return;
       }
-    );
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        console.log('Initial session found:', session);
-      }
+      // Set up auth state listener
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('Auth state changed:', event, session);
+          setSession(session);
+
+          if (session?.user) {
+            // Fetch user profile from profiles table
+            const { data: profile, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+
+            if (error) {
+              console.error('Error fetching profile:', error);
+              // If profile doesn't exist, create it
+              if (error.code === 'PGRST116') {
+                const { error: createError } = await supabase
+                  .from('profiles')
+                  .insert({
+                    id: session.user.id,
+                    email: session.user.email || '',
+                    full_name: session.user.user_metadata.full_name || session.user.email?.split('@')[0] || 'User',
+                    role: session.user.user_metadata.role || 'student'
+                  });
+
+                if (createError) {
+                  console.error('Error creating profile:', createError);
+                  setIsLoading(false);
+                  return;
+                }
+
+                // Fetch the newly created profile
+                const { data: newProfile } = await supabase
+                  .from('profiles')
+                  .select('*')
+                  .eq('id', session.user.id)
+                  .single();
+
+                if (newProfile) {
+                  setUser({
+                    id: session.user.id,
+                    email: session.user.email || '',
+                    name: newProfile.full_name,
+                    role: newProfile.role as UserRole,
+                    avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newProfile.full_name}`
+                  });
+                }
+              }
+            } else if (profile) {
+              setUser({
+                id: session.user.id,
+                email: session.user.email || '',
+                name: profile.full_name,
+                role: profile.role as UserRole,
+                avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.full_name}`
+              });
+            }
+          } else {
+            setUser(null);
+          }
+
+          setIsLoading(false);
+        }
+      );
+
+      // Get initial session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          console.log('Initial session found:', session);
+        }
+      });
+
+      return () => subscription.unsubscribe();
     });
-
-    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -144,6 +209,28 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         throw error;
       }
 
+      // Create profile record
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            email: email,
+            full_name: name,
+            role: role
+          });
+
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+          toast({
+            variant: "destructive",
+            title: "Profile creation failed",
+            description: "Your account was created but profile setup failed. Please contact support.",
+          });
+          throw profileError;
+        }
+      }
+
       toast({
         title: "Registration successful",
         description: "Your account has been created successfully!",
@@ -159,7 +246,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const logout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
-      
+
       if (error) {
         toast({
           variant: "destructive",
