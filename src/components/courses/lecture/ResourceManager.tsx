@@ -1,9 +1,11 @@
+
 import React, { useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from "@/integrations/supabase/client";
-import { Paperclip, Upload, FileText, Trash2 } from 'lucide-react';
+import { Paperclip, Upload, FileText, Trash2, CheckCircle } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export interface Resource {
   id: string;
@@ -19,6 +21,7 @@ interface ResourceManagerProps {
 
 const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }) => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [resourceName, setResourceName] = useState('');
   const [resourceFile, setResourceFile] = useState<File | null>(null);
   const [resourceType, setResourceType] = useState<'pdf' | 'assignment' | 'other'>('pdf');
@@ -28,6 +31,13 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      
+      console.log('Selected resource file:', {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      });
+
       // Check file size (limit to 10MB)
       if (file.size > 10 * 1024 * 1024) {
         toast({
@@ -37,6 +47,7 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
         });
         return;
       }
+      
       setResourceFile(file);
       // Use filename as resource name if not provided
       if (!resourceName) {
@@ -55,56 +66,70 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
       return;
     }
 
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to upload resources",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsUploading(true);
     setUploadProgress(10);
 
     try {
+      console.log('Starting resource upload to Supabase storage...');
+      
       // Create a unique file path for the resource
       const fileExt = resourceFile.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const fileName = `${user.id}/${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+      
+      console.log('Uploading resource to path:', fileName);
+      setUploadProgress(50);
 
       // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('course_pdfs')
-        .upload(filePath, resourceFile, {
+        .upload(fileName, resourceFile, {
           cacheControl: '3600',
           upsert: false
         });
 
-      // Manually set progress to 100% when upload completes
-      setUploadProgress(100);
+      console.log('Resource upload result:', { data, error });
+      setUploadProgress(90);
 
       if (error) {
+        console.error('Resource upload error:', error);
         throw error;
       }
 
       // Get the public URL for the uploaded resource
       const { data: publicUrlData } = supabase.storage
         .from('course_pdfs')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
       const resourcePublicUrl = publicUrlData.publicUrl;
+      console.log('Generated resource public URL:', resourcePublicUrl);
 
-      // Insert into pdfs table in Supabase
+      // Insert into pdfs table in Supabase for tracking
       try {
         const { error: pdfError } = await supabase
           .from('pdfs')
           .insert({
             file_url: resourcePublicUrl,
             title: resourceName,
-            module_id: null, // You can update this if you have a module_id
-            position: 0, // You can update this if you want to track order
+            module_id: null, // Will be linked to module when available
+            position: 0,
           });
+        
         if (pdfError) {
-          throw pdfError;
+          console.warn('Could not insert into pdfs table:', pdfError);
+          // Don't throw here as the file upload succeeded
         }
       } catch (pdfError) {
-        toast({
-          variant: "destructive",
-          title: "DB insert failed",
-          description: pdfError instanceof Error ? pdfError.message : "Failed to save PDF info to database",
-        });
+        console.warn('DB insert warning:', pdfError);
+        // Continue with the flow even if DB insert fails
       }
 
       // Add to resources list
@@ -121,6 +146,7 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
       // Reset form
       setResourceName('');
       setResourceFile(null);
+      setUploadProgress(100);
 
       toast({
         title: "Resource uploaded successfully",
@@ -129,14 +155,26 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
 
       setTimeout(() => {
         setIsUploading(false);
+        setUploadProgress(0);
       }, 1000);
 
-    } catch (error) {
-      console.error("Upload error:", error);
+    } catch (error: any) {
+      console.error("Resource upload error:", error);
+      
+      let errorMessage = "There was an error uploading your resource";
+      
+      if (error.message?.includes('row-level security')) {
+        errorMessage = "Storage permissions error. Please contact support.";
+      } else if (error.message?.includes('bucket')) {
+        errorMessage = "Storage bucket not found. Please contact support.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         variant: "destructive",
         title: "Upload failed",
-        description: error instanceof Error ? error.message : "There was an error uploading your resource",
+        description: errorMessage,
       });
       setIsUploading(false);
       setUploadProgress(0);
@@ -175,7 +213,7 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
           <div>
             <Input
               type="file"
-              accept=".pdf,.doc,.docx,.txt"
+              accept=".pdf,.doc,.docx,.txt,.ppt,.pptx"
               onChange={handleFileChange}
               disabled={isUploading}
             />
@@ -197,15 +235,20 @@ const ResourceManager: React.FC<ResourceManagerProps> = ({ resources, onChange }
           </div>
         )}
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={uploadResource}
-          disabled={isUploading || !resourceFile || !resourceName}
-        >
-          <Upload className="mr-2" size={16} />
-          Upload Resource
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={uploadResource}
+            disabled={isUploading || !resourceFile || !resourceName || !user}
+          >
+            <Upload className="mr-2" size={16} />
+            {isUploading ? 'Uploading...' : 'Upload Resource'}
+          </Button>
+          {!user && (
+            <p className="text-sm text-red-600">Please log in to upload files</p>
+          )}
+        </div>
       </div>
 
       {resources.length > 0 && (

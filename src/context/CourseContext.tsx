@@ -1,10 +1,15 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from './AuthContext';
 
 export interface Quiz {
   id: string;
   title: string;
+  description?: string;
+  passingScore: number;
+  timeLimitMinutes?: number;
   questions: {
     id: string;
     text: string;
@@ -43,6 +48,7 @@ export interface Course {
 interface CourseContextType {
   courses: Course[];
   isLoading: boolean;
+  fetchCourses: () => Promise<void>;
   createCourse: (courseData: Partial<Course>) => Promise<Course>;
   updateCourse: (courseId: string, courseData: Partial<Course>) => Promise<Course>;
   deleteCourse: (courseId: string) => Promise<void>;
@@ -57,6 +63,7 @@ interface CourseContextType {
 const defaultContext: CourseContextType = {
   courses: [],
   isLoading: false,
+  fetchCourses: async () => {},
   createCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '', category: '' }),
   updateCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '', category: '' }),
   deleteCourse: async () => { },
@@ -78,207 +85,164 @@ interface CourseProviderProps {
 
 export const CourseProvider = ({ children }: CourseProviderProps) => {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Mock courses data
-  const [courses, setCourses] = useState<Course[]>([
-    {
-      id: '1',
-      title: 'Introduction to Web Development',
-      description: 'Learn the basics of HTML, CSS, and JavaScript to build modern websites.',
-      imageUrl: 'https://images.unsplash.com/photo-1593720213428-28a5b9e94613?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
-      instructorId: '2',
-      instructorName: 'Jane Instructor',
-      lectures: [
-        {
-          id: '101',
-          title: 'HTML Fundamentals',
-          description: 'Learn the building blocks of web pages.',
-          videoUrl: 'https://www.youtube.com/embed/qz0aGYrrlhU',
-          resources: [
-            {
-              id: '201',
-              name: 'HTML Cheatsheet',
-              fileUrl: '#',
-              type: 'pdf'
-            },
-            {
-              id: '202',
-              name: 'Practice Exercise',
-              fileUrl: '#',
-              type: 'assignment'
-            }
-          ]
-        },
-        {
-          id: '102',
-          title: 'CSS Styling',
-          description: 'Make your websites beautiful with CSS.',
-          videoUrl: 'https://www.youtube.com/embed/1PnVor36_40',
-          resources: [
-            {
-              id: '203',
-              name: 'CSS Reference',
-              fileUrl: '#',
-              type: 'pdf'
-            }
-          ]
-        }
-      ],
-      quizzes: [
-        {
-          id: '301',
-          title: 'HTML Basics Quiz',
-          questions: [
-            {
-              id: '401',
-              text: 'What does HTML stand for?',
-              options: [
-                'Hyper Text Markup Language',
-                'Hyper Transfer Markup Language',
-                'Home Tool Markup Language',
-                'Hyperlink Text Management Language'
-              ],
-              correctOptionIndex: 0
-            },
-            {
-              id: '402',
-              text: 'Which HTML tag is used to create a paragraph?',
-              options: ['<paragraph>', '<p>', '<para>', '<text>'],
-              correctOptionIndex: 1
-            }
-          ]
-        }
-      ],
-      enrolledStudents: ['1'],
-      createdAt: new Date().toISOString(),
-      category: 'Web Development',
-    },
-    {
-      id: '2',
-      title: 'Advanced React Development',
-      description: 'Master React hooks, context API, and performance optimization.',
-      imageUrl: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
-      instructorId: '2',
-      instructorName: 'Jane Instructor',
-      lectures: [
-        {
-          id: '103',
-          title: 'React Hooks',
-          description: 'Understand useState, useEffect, and custom hooks.',
-          videoUrl: 'https://www.youtube.com/embed/TNhaISOUy6Q',
-          resources: [
-            {
-              id: '204',
-              name: 'Hooks Cheatsheet',
-              fileUrl: '#',
-              type: 'pdf'
-            }
-          ]
-        }
-      ],
-      quizzes: [
-        {
-          id: '302',
-          title: 'React Fundamentals',
-          questions: [
-            {
-              id: '403',
-              text: 'What hook would you use to store state in a functional component?',
-              options: ['useStore', 'useState', 'useStateful', 'stateHook'],
-              correctOptionIndex: 1
-            }
-          ]
-        }
-      ],
-      enrolledStudents: [],
-      createdAt: new Date().toISOString(),
-      category: 'Web Development',
-    },
-    {
-      id: '3',
-      title: 'Data Science Fundamentals',
-      description: 'Introduction to data analysis, visualization, and machine learning basics.',
-      imageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
-      instructorId: '2',
-      instructorName: 'Jane Instructor',
-      lectures: [
-        {
-          id: '104',
-          title: 'Introduction to Python for Data Science',
-          description: 'Learn Python basics for data analysis.',
-          videoUrl: 'https://www.youtube.com/embed/LHBE6Q9XlzI',
-          resources: [
-            {
-              id: '205',
-              name: 'Python Basics',
-              fileUrl: '#',
-              type: 'pdf'
-            }
-          ]
-        }
-      ],
-      quizzes: [
-        {
-          id: '303',
-          title: 'Python Basics',
-          questions: [
-            {
-              id: '404',
-              text: 'Which of the following is NOT a data type in Python?',
-              options: ['Integer', 'Boolean', 'Character', 'Float'],
-              correctOptionIndex: 2
-            }
-          ]
-        }
-      ],
-      enrolledStudents: [],
-      createdAt: new Date().toISOString(),
-      category: 'Data Science',
+  const fetchCourses = async () => {
+    console.log('Fetching courses from Supabase...');
+    setIsLoading(true);
+    try {
+      // Fetch courses with instructor profile data
+      const { data: coursesData, error: coursesError } = await supabase
+        .from('courses')
+        .select(`
+          *,
+          instructor:profiles!courses_instructor_id_fkey(full_name)
+        `);
+
+      if (coursesError) {
+        console.error('Error fetching courses:', coursesError);
+        throw coursesError;
+      }
+
+      console.log('Fetched courses data:', coursesData);
+
+      // Fetch enrollments
+      const { data: enrollmentsData, error: enrollmentsError } = await supabase
+        .from('enrollments')
+        .select('course_id, student_id');
+
+      if (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError);
+        throw enrollmentsError;
+      }
+
+      // Fetch quizzes for all courses
+      const { data: quizzesData, error: quizzesError } = await supabase
+        .from('quizzes')
+        .select(`
+          *,
+          quiz_questions(
+            *,
+            quiz_options(*)
+          )
+        `);
+
+      if (quizzesError) {
+        console.error('Error fetching quizzes:', quizzesError);
+        throw quizzesError;
+      }
+
+      // Transform the data to match our Course interface
+      const transformedCourses: Course[] = coursesData?.map(course => {
+        // Get enrollments for this course
+        const courseEnrollments = enrollmentsData?.filter(e => e.course_id === course.id) || [];
+        const enrolledStudents = courseEnrollments.map(e => e.student_id);
+
+        // Get quizzes for this course
+        const courseQuizzes = quizzesData?.filter(q => q.course_id === course.id) || [];
+        const transformedQuizzes: Quiz[] = courseQuizzes.map(quiz => ({
+          id: quiz.id,
+          title: quiz.title,
+          description: quiz.description || '',
+          passingScore: quiz.passing_score || 70,
+          timeLimitMinutes: quiz.time_limit_minutes,
+          questions: quiz.quiz_questions?.map(question => ({
+            id: question.id,
+            text: question.question_text,
+            options: question.quiz_options?.map(option => option.option_text) || [],
+            correctOptionIndex: question.quiz_options?.findIndex(option => option.is_correct) || 0
+          })) || []
+        }));
+
+        return {
+          id: course.id,
+          title: course.title,
+          description: course.description || '',
+          imageUrl: 'https://images.unsplash.com/photo-1593720213428-28a5b9e94613?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80', // Default image
+          instructorId: course.instructor_id,
+          instructorName: course.instructor?.full_name || 'Unknown Instructor',
+          lectures: [], // Will be populated separately if needed
+          quizzes: transformedQuizzes,
+          enrolledStudents,
+          createdAt: course.created_at,
+          category: course.category || 'General'
+        };
+      }) || [];
+
+      console.log('Transformed courses:', transformedCourses);
+      setCourses(transformedCourses);
+    } catch (error) {
+      console.error('Error in fetchCourses:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to fetch courses from database',
+      });
+    } finally {
+      setIsLoading(false);
     }
-  ]);
+  };
+
+  // Fetch courses when user changes or on mount
+  useEffect(() => {
+    fetchCourses();
+  }, [user]);
 
   const createCourse = async (courseData: Partial<Course>): Promise<Course> => {
     setIsLoading(true);
     try {
+      console.log('Creating course with data:', courseData);
+      
+      if (!user) {
+        throw new Error('User must be logged in to create courses');
+      }
+
       // Insert into Supabase
       const { data, error } = await supabase
         .from('courses')
         .insert({
           title: courseData.title,
           description: courseData.description,
-          category: courseData.category || '',
-          instructor_id: courseData.instructorId,
+          category: courseData.category || 'General',
+          instructor_id: user.id,
         })
         .select()
         .single();
 
       if (error) {
+        console.error('Supabase error creating course:', error);
         throw error;
       }
+
+      console.log('Course created in database:', data);
 
       // Build the new course object for local state
       const newCourse: Course = {
         id: data.id,
         title: data.title,
-        description: data.description,
-        imageUrl: courseData.imageUrl || '', // Not in DB, but kept for UI compatibility
+        description: data.description || '',
+        imageUrl: courseData.imageUrl || 'https://images.unsplash.com/photo-1593720213428-28a5b9e94613?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
         instructorId: data.instructor_id,
-        instructorName: courseData.instructorName || '',
+        instructorName: user.name,
         lectures: [],
         quizzes: [],
         enrolledStudents: [],
         createdAt: data.created_at,
-        category: courseData.category || '',
+        category: data.category || 'General',
       };
+
       setCourses(prev => [...prev, newCourse]);
+      
       toast({
         title: 'Course created',
         description: 'Your course has been created successfully',
       });
+      
       return newCourse;
     } catch (error) {
-      console.error(error);
+      console.error('Error creating course:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -293,7 +257,23 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
   const updateCourse = async (courseId: string, courseData: Partial<Course>): Promise<Course> => {
     setIsLoading(true);
     try {
-      // In production, this would be a call to Supabase
+      // Update in Supabase
+      const { data, error } = await supabase
+        .from('courses')
+        .update({
+          title: courseData.title,
+          description: courseData.description,
+          category: courseData.category,
+        })
+        .eq('id', courseId)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
       const updatedCourses = courses.map(course => {
         if (course.id === courseId) {
           return { ...course, ...courseData };
@@ -331,7 +311,17 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
   const deleteCourse = async (courseId: string): Promise<void> => {
     setIsLoading(true);
     try {
-      // In production, this would be a call to Supabase
+      // Delete from Supabase
+      const { error } = await supabase
+        .from('courses')
+        .delete()
+        .eq('id', courseId);
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
       setCourses(prev => prev.filter(course => course.id !== courseId));
 
       toast({
@@ -354,12 +344,33 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
   const enrollInCourse = async (courseId: string, studentId: string): Promise<void> => {
     setIsLoading(true);
     try {
-      // In production, this would be a call to Supabase
+      // Check if already enrolled
+      const { data: existingEnrollment } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('course_id', courseId)
+        .eq('student_id', studentId)
+        .single();
+
+      if (existingEnrollment) {
+        throw new Error('Already enrolled in this course');
+      }
+
+      // Insert enrollment
+      const { error } = await supabase
+        .from('enrollments')
+        .insert({
+          course_id: courseId,
+          student_id: studentId,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
       const updatedCourses = courses.map(course => {
         if (course.id === courseId) {
-          if (course.enrolledStudents.includes(studentId)) {
-            throw new Error('Already enrolled in this course');
-          }
           return {
             ...course,
             enrolledStudents: [...course.enrolledStudents, studentId]
@@ -520,6 +531,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
       value={{
         courses,
         isLoading,
+        fetchCourses,
         createCourse,
         updateCourse,
         deleteCourse,

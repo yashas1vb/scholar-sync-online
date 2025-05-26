@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FormControl, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Upload, Video, AlertCircle } from 'lucide-react';
+import { Upload, Video, AlertCircle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from '@/context/AuthContext';
 
 interface VideoUploaderProps {
   onChange: (url: string) => void;
@@ -14,12 +15,14 @@ interface VideoUploaderProps {
 
 const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = '' }) => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [videoUploadProgress, setVideoUploadProgress] = useState(0);
   const [videoUrl, setVideoUrl] = useState<string>(defaultValue);
+  const [uploadComplete, setUploadComplete] = useState(false);
 
-  // Maximum file size: 500MB (increased from 100MB)
+  // Maximum file size: 500MB
   const MAX_FILE_SIZE = 500 * 1024 * 1024;
   const MAX_FILE_SIZE_MB = 500;
 
@@ -27,6 +30,12 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       
+      console.log('Selected video file:', {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      });
+
       // Check file size
       if (file.size > MAX_FILE_SIZE) {
         toast({
@@ -41,55 +50,68 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
       if (!file.type.startsWith('video/')) {
         toast({
           title: "Invalid file type",
-          description: "Please select a valid video file",
+          description: "Please select a valid video file (MP4, MOV, AVI, WebM)",
           variant: "destructive",
         });
         return;
       }
 
       setVideoFile(file);
+      setUploadComplete(false);
     }
   };
 
   const uploadVideo = async () => {
-    if (!videoFile) return;
+    if (!videoFile || !user) {
+      toast({
+        title: "Upload error",
+        description: "Please select a video file and ensure you're logged in",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsUploading(true);
-    setVideoUploadProgress(0);
+    setVideoUploadProgress(10);
     
     try {
+      console.log('Starting video upload to Supabase storage...');
+      
       // Create a unique file path for the video
       const fileExt = videoFile.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const fileName = `${user.id}/${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
       
-      // Start with initial progress
-      setVideoUploadProgress(10);
+      console.log('Uploading to path:', fileName);
+      setVideoUploadProgress(30);
       
       // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('course_videos')
-        .upload(filePath, videoFile, {
+        .upload(fileName, videoFile, {
           cacheControl: '3600',
           upsert: false
         });
 
-      // Update progress to 100% when upload completes
-      setVideoUploadProgress(100);
+      console.log('Upload result:', { data, error });
+      setVideoUploadProgress(80);
 
       if (error) {
+        console.error('Upload error:', error);
         throw error;
       }
 
       // Get the public URL for the uploaded video
       const { data: publicUrlData } = supabase.storage
         .from('course_videos')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
       const videoPublicUrl = publicUrlData.publicUrl;
+      console.log('Generated public URL:', videoPublicUrl);
       
+      setVideoUploadProgress(100);
       setVideoUrl(videoPublicUrl);
       onChange(videoPublicUrl);
+      setUploadComplete(true);
       
       toast({
         title: "Video uploaded successfully",
@@ -99,21 +121,34 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
       setTimeout(() => {
         setIsUploading(false);
       }, 1000);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Upload error:", error);
+      
+      let errorMessage = "There was an error uploading your video";
+      
+      if (error.message?.includes('row-level security')) {
+        errorMessage = "Storage permissions error. Please contact support.";
+      } else if (error.message?.includes('bucket')) {
+        errorMessage = "Storage bucket not found. Please contact support.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         variant: "destructive",
         title: "Upload failed",
-        description: error instanceof Error ? error.message : "There was an error uploading your video",
+        description: errorMessage,
       });
       setIsUploading(false);
       setVideoUploadProgress(0);
+      setUploadComplete(false);
     }
   };
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setVideoUrl(e.target.value);
     onChange(e.target.value);
+    setUploadComplete(false);
   };
 
   const getVideoDurationEstimate = (file: File) => {
@@ -139,6 +174,7 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
                 <li>Maximum file size: {MAX_FILE_SIZE_MB}MB</li>
                 <li>Supported formats: MP4, MOV, AVI, WebM</li>
                 <li>Recommended resolution: 720p or 1080p</li>
+                <li>Estimated maximum duration: ~{MAX_FILE_SIZE_MB} minutes (1MB per minute)</li>
                 <li>For longer videos, consider using YouTube and embedding the link below</li>
               </ul>
             </div>
@@ -158,12 +194,15 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
               <Button 
                 type="button" 
                 onClick={uploadVideo} 
-                disabled={!videoFile || isUploading}
+                disabled={!videoFile || isUploading || !user}
                 variant="outline"
               >
                 <Upload className="mr-2" size={16} />
-                Upload
+                {isUploading ? 'Uploading...' : 'Upload'}
               </Button>
+              {uploadComplete && (
+                <CheckCircle className="h-5 w-5 text-green-600" />
+              )}
             </div>
             
             {isUploading && (
@@ -199,6 +238,12 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onChange, defaultValue = 
           Supports YouTube embed URLs, Vimeo, or direct video links. For YouTube videos, use the embed URL format:
           https://www.youtube.com/embed/VIDEO_ID
         </p>
+        {uploadComplete && videoUrl && (
+          <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+            <CheckCircle className="h-3 w-3" />
+            Video uploaded successfully and ready to use
+          </p>
+        )}
       </div>
     </div>
   );
