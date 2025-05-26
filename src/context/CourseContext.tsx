@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from '@/integrations/supabase/client';
@@ -23,6 +22,7 @@ export interface Lecture {
   title: string;
   description: string;
   videoUrl: string;
+  duration?: number;
   resources: {
     id: string;
     name: string;
@@ -58,6 +58,9 @@ interface CourseContextType {
   addLecture: (courseId: string, lectureData: Omit<Lecture, 'id'>) => Promise<Lecture>;
   updateLecture: (courseId: string, lectureId: string, lectureData: Partial<Lecture>) => Promise<Lecture>;
   deleteLecture: (courseId: string, lectureId: string) => Promise<void>;
+  markVideoAsWatched: (videoId: string, studentId: string) => Promise<void>;
+  getVideoProgress: (studentId: string) => Promise<Record<string, boolean>>;
+  checkCourseCompletion: (courseId: string, studentId: string) => Promise<boolean>;
 }
 
 const defaultContext: CourseContextType = {
@@ -73,6 +76,9 @@ const defaultContext: CourseContextType = {
   addLecture: async () => ({ id: '', title: '', description: '', videoUrl: '', resources: [] }),
   updateLecture: async () => ({ id: '', title: '', description: '', videoUrl: '', resources: [] }),
   deleteLecture: async () => { },
+  markVideoAsWatched: async () => { },
+  getVideoProgress: async () => { },
+  checkCourseCompletion: async () => { },
 };
 
 const CourseContext = createContext<CourseContextType>(defaultContext);
@@ -93,7 +99,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
     console.log('Fetching courses from Supabase...');
     setIsLoading(true);
     try {
-      // Fetch courses with instructor profile data
+      // Fetch courses with instructor profile data and videos
       const { data: coursesData, error: coursesError } = await supabase
         .from('courses')
         .select(`
@@ -106,8 +112,6 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         throw coursesError;
       }
 
-      console.log('Fetched courses data:', coursesData);
-
       // Fetch enrollments
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
@@ -116,6 +120,19 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
       if (enrollmentsError) {
         console.error('Error fetching enrollments:', enrollmentsError);
         throw enrollmentsError;
+      }
+
+      // Fetch videos for all courses
+      const { data: videosData, error: videosError } = await supabase
+        .from('videos')
+        .select(`
+          *,
+          module:modules!videos_module_id_fkey(course_id)
+        `);
+
+      if (videosError) {
+        console.error('Error fetching videos:', videosError);
+        throw videosError;
       }
 
       // Fetch quizzes for all courses
@@ -140,6 +157,17 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         const courseEnrollments = enrollmentsData?.filter(e => e.course_id === course.id) || [];
         const enrolledStudents = courseEnrollments.map(e => e.student_id);
 
+        // Get videos for this course
+        const courseVideos = videosData?.filter(v => v.module?.course_id === course.id) || [];
+        const lectures: Lecture[] = courseVideos.map(video => ({
+          id: video.id,
+          title: video.title,
+          description: video.description || '',
+          videoUrl: video.video_url,
+          duration: video.duration,
+          resources: [] // Will be populated separately if needed
+        }));
+
         // Get quizzes for this course
         const courseQuizzes = quizzesData?.filter(q => q.course_id === course.id) || [];
         const transformedQuizzes: Quiz[] = courseQuizzes.map(quiz => ({
@@ -160,10 +188,10 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
           id: course.id,
           title: course.title,
           description: course.description || '',
-          imageUrl: 'https://images.unsplash.com/photo-1593720213428-28a5b9e94613?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80', // Default image
+          imageUrl: 'https://images.unsplash.com/photo-1593720213428-28a5b9e94613?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
           instructorId: course.instructor_id,
           instructorName: course.instructor?.full_name || 'Unknown Instructor',
-          lectures: [], // Will be populated separately if needed
+          lectures,
           quizzes: transformedQuizzes,
           enrolledStudents,
           createdAt: course.created_at,
@@ -398,6 +426,63 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
     }
   };
 
+  const markVideoAsWatched = async (videoId: string, studentId: string): Promise<void> => {
+    try {
+      const { error } = await supabase
+        .from('video_progress')
+        .upsert({
+          video_id: videoId,
+          student_id: studentId,
+          watched_seconds: 1, // Mark as completed
+        });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error marking video as watched:', error);
+      throw error;
+    }
+  };
+
+  const getVideoProgress = async (studentId: string): Promise<Record<string, boolean>> => {
+    try {
+      const { data, error } = await supabase
+        .from('video_progress')
+        .select('video_id, watched_seconds')
+        .eq('student_id', studentId);
+
+      if (error) {
+        throw error;
+      }
+
+      const progress: Record<string, boolean> = {};
+      data?.forEach(item => {
+        progress[item.video_id] = item.watched_seconds > 0;
+      });
+
+      return progress;
+    } catch (error) {
+      console.error('Error fetching video progress:', error);
+      return {};
+    }
+  };
+
+  const checkCourseCompletion = async (courseId: string, studentId: string): Promise<boolean> => {
+    try {
+      const course = courses.find(c => c.id === courseId);
+      if (!course || course.lectures.length === 0) return false;
+
+      const progress = await getVideoProgress(studentId);
+      const completedLectures = course.lectures.filter(lecture => progress[lecture.id]);
+      
+      return completedLectures.length === course.lectures.length;
+    } catch (error) {
+      console.error('Error checking course completion:', error);
+      return false;
+    }
+  };
+
   // New methods for lecture management
   const addLecture = async (courseId: string, lectureData: Omit<Lecture, 'id'>): Promise<Lecture> => {
     setIsLoading(true);
@@ -540,7 +625,10 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         getEnrolledCourses,
         addLecture,
         updateLecture,
-        deleteLecture
+        deleteLecture,
+        markVideoAsWatched,
+        getVideoProgress,
+        checkCourseCompletion
       }}
     >
       {children}

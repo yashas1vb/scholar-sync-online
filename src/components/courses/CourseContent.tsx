@@ -1,9 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Course, Lecture } from '@/context/CourseContext';
 import { Button } from '@/components/ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { FileText, Download, Play, Lock } from 'lucide-react';
+import { FileText, Download, Play, Lock, CheckCircle } from 'lucide-react';
+import { useCourses } from '@/context/CourseContext';
+import { useAuth } from '@/context/AuthContext';
+import VideoPlayer from './VideoPlayer';
 
 interface CourseContentProps {
   course: Course;
@@ -19,6 +22,31 @@ const CourseContent: React.FC<CourseContentProps> = ({
   setActiveLecture
 }) => {
   const [expandedLectureIds, setExpandedLectureIds] = useState<string[]>([]);
+  const [videoProgress, setVideoProgress] = useState<Record<string, boolean>>({});
+  const [courseCompleted, setCourseCompleted] = useState(false);
+  
+  const { getVideoProgress, checkCourseCompletion } = useCourses();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user && isEnrolled) {
+      loadVideoProgress();
+    }
+  }, [user, isEnrolled, course.id]);
+
+  const loadVideoProgress = async () => {
+    if (!user) return;
+    
+    try {
+      const progress = await getVideoProgress(user.id);
+      setVideoProgress(progress);
+      
+      const completed = await checkCourseCompletion(course.id, user.id);
+      setCourseCompleted(completed);
+    } catch (error) {
+      console.error('Error loading video progress:', error);
+    }
+  };
 
   const toggleLectureExpanded = (lectureId: string) => {
     if (expandedLectureIds.includes(lectureId)) {
@@ -38,21 +66,49 @@ const CourseContent: React.FC<CourseContentProps> = ({
     }
   };
 
+  const handleVideoComplete = () => {
+    loadVideoProgress(); // Refresh progress after completion
+  };
+
   return (
     <div>
       {/* Active Lecture View */}
       {activeLecture && (
         <div className="mb-8">
           <h2 className="text-xl font-bold mb-4">{activeLecture.title}</h2>
-          <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden mb-6">
-            <iframe 
-              src={activeLecture.videoUrl} 
-              title={activeLecture.title}
-              className="w-full aspect-video"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            ></iframe>
-          </div>
+          
+          {isEnrolled ? (
+            <VideoPlayer 
+              lecture={activeLecture}
+              onComplete={handleVideoComplete}
+              isCompleted={videoProgress[activeLecture.id]}
+            />
+          ) : (
+            <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden mb-4">
+              {activeLecture.videoUrl ? (
+                activeLecture.videoUrl.includes('youtube.com') || activeLecture.videoUrl.includes('youtu.be') ? (
+                  <iframe 
+                    src={activeLecture.videoUrl}
+                    className="w-full h-full"
+                    allowFullScreen
+                    title={activeLecture.title}
+                  ></iframe>
+                ) : (
+                  <video 
+                    src={activeLecture.videoUrl} 
+                    controls 
+                    className="w-full h-full"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                )
+              ) : (
+                <div className="flex items-center justify-center h-full bg-gray-100">
+                  <p className="text-gray-500">No video available for this lecture</p>
+                </div>
+              )}
+            </div>
+          )}
           
           <div className="prose max-w-none">
             <p>{activeLecture.description}</p>
@@ -83,6 +139,34 @@ const CourseContent: React.FC<CourseContentProps> = ({
         </div>
       )}
 
+      {/* Course Progress Summary */}
+      {isEnrolled && course.lectures.length > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-blue-900">Course Progress</h3>
+              <p className="text-sm text-blue-700">
+                {Object.values(videoProgress).filter(Boolean).length} of {course.lectures.length} lectures completed
+              </p>
+            </div>
+            {courseCompleted && (
+              <div className="flex items-center text-green-600">
+                <CheckCircle size={20} className="mr-2" />
+                <span className="font-medium">Course Completed!</span>
+              </div>
+            )}
+          </div>
+          <div className="mt-2 w-full bg-blue-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ 
+                width: `${(Object.values(videoProgress).filter(Boolean).length / course.lectures.length) * 100}%` 
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Course Content List */}
       <div>
         <h3 className="text-lg font-semibold mb-4">Course Content</h3>
@@ -91,6 +175,7 @@ const CourseContent: React.FC<CourseContentProps> = ({
             {course.lectures.map((lecture, index) => {
               const isLocked = !isEnrolled && index > 0;
               const isActive = activeLecture?.id === lecture.id;
+              const isCompleted = videoProgress[lecture.id];
               
               return (
                 <AccordionItem 
@@ -105,10 +190,12 @@ const CourseContent: React.FC<CourseContentProps> = ({
                     >
                       <div className="flex items-center">
                         {isLocked && <Lock size={16} className="mr-2 text-gray-400" />}
+                        {isCompleted && <CheckCircle size={16} className="mr-2 text-green-600" />}
                         <div className="text-left">
                           <div className="font-medium">{lecture.title}</div>
                           <div className="text-sm text-gray-500 mt-1">
                             {lecture.resources.length} resources • Video lecture
+                            {isCompleted && <span className="ml-2 text-green-600">✓ Completed</span>}
                           </div>
                         </div>
                       </div>

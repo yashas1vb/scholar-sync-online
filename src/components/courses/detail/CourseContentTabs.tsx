@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Course, Lecture } from '@/context/CourseContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -7,6 +7,9 @@ import CourseContent from '@/components/courses/CourseContent';
 import CourseDiscussion from '@/components/forum/CourseDiscussion';
 import QuizList from '@/components/quiz/QuizList';
 import CourseChat from '@/components/chat/CourseChat';
+import CertificateGenerator from '@/components/certificates/CertificateGenerator';
+import { useCourses } from '@/context/CourseContext';
+import { useAuth } from '@/context/AuthContext';
 
 interface CourseContentTabsProps {
   course: Course;
@@ -27,6 +30,27 @@ const CourseContentTabs: React.FC<CourseContentTabsProps> = ({
   activeLecture,
   setActiveLecture,
 }) => {
+  const [courseCompleted, setCourseCompleted] = useState(false);
+  const { checkCourseCompletion } = useCourses();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user && isEnrolled) {
+      checkCompletion();
+    }
+  }, [user, isEnrolled, course.id]);
+
+  const checkCompletion = async () => {
+    if (!user) return;
+    
+    try {
+      const completed = await checkCourseCompletion(course.id, user.id);
+      setCourseCompleted(completed);
+    } catch (error) {
+      console.error('Error checking course completion:', error);
+    }
+  };
+
   return (
     <>
       {!isEnrolled && (
@@ -50,41 +74,12 @@ const CourseContentTabs: React.FC<CourseContentTabsProps> = ({
           <TabsTrigger value="discussion">Discussion</TabsTrigger>
           <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
           <TabsTrigger value="chat">Live Chat</TabsTrigger>
+          {isEnrolled && courseCompleted && (
+            <TabsTrigger value="certificate">Certificate</TabsTrigger>
+          )}
         </TabsList>
         
         <TabsContent value="content" className="mt-0">
-          {/* Lecture video player */}
-          {activeLecture && (
-            <div className="mb-6">
-              <div className="aspect-video bg-black rounded-lg overflow-hidden mb-4">
-                {activeLecture.videoUrl ? (
-                  activeLecture.videoUrl.includes('youtube.com') || activeLecture.videoUrl.includes('youtu.be') ? (
-                    <iframe 
-                      src={activeLecture.videoUrl}
-                      className="w-full h-full"
-                      allowFullScreen
-                      title={activeLecture.title}
-                    ></iframe>
-                  ) : (
-                    <video 
-                      src={activeLecture.videoUrl} 
-                      controls 
-                      className="w-full h-full"
-                    >
-                      Your browser does not support the video tag.
-                    </video>
-                  )
-                ) : (
-                  <div className="flex items-center justify-center h-full bg-gray-100">
-                    <p className="text-gray-500">No video available for this lecture</p>
-                  </div>
-                )}
-              </div>
-              <h2 className="text-xl font-bold mb-2">{activeLecture.title}</h2>
-              <p className="text-gray-700 mb-4">{activeLecture.description}</p>
-            </div>
-          )}
-          
           <CourseContent 
             course={course} 
             isEnrolled={isEnrolled} 
@@ -125,6 +120,16 @@ const CourseContentTabs: React.FC<CourseContentTabsProps> = ({
             </div>
           )}
         </TabsContent>
+        
+        {isEnrolled && courseCompleted && (
+          <TabsContent value="certificate" className="mt-0">
+            <CertificateGenerator
+              course={course}
+              studentName={user?.name || 'Student'}
+              completionDate={new Date().toLocaleDateString()}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </>
   );
