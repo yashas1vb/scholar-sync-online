@@ -77,8 +77,8 @@ const defaultContext: CourseContextType = {
   updateLecture: async () => ({ id: '', title: '', description: '', videoUrl: '', resources: [] }),
   deleteLecture: async () => { },
   markVideoAsWatched: async () => { },
-  getVideoProgress: async () => { },
-  checkCourseCompletion: async () => { },
+  getVideoProgress: async (studentId: string) => ({}),
+  checkCourseCompletion: async (courseId: string, studentId: string) => false,
 };
 
 const CourseContext = createContext<CourseContextType>(defaultContext);
@@ -99,7 +99,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
     console.log('Fetching courses from Supabase...');
     setIsLoading(true);
     try {
-      // Fetch courses with instructor profile data and videos
+      // Fetch courses with instructor profile data
       const { data: coursesData, error: coursesError } = await supabase
         .from('courses')
         .select(`
@@ -122,18 +122,19 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         throw enrollmentsError;
       }
 
-      // Fetch videos for all courses
-      const { data: videosData, error: videosError } = await supabase
-        .from('videos')
-        .select(`
-          *,
-          module:modules!videos_module_id_fkey(course_id)
-        `);
+      // Fetch videos from storage bucket and match with course data
+      const { data: storageFiles, error: storageError } = await supabase.storage
+        .from('course_videos')
+        .list('', {
+          limit: 1000,
+          offset: 0
+        });
 
-      if (videosError) {
-        console.error('Error fetching videos:', videosError);
-        throw videosError;
+      if (storageError) {
+        console.error('Error fetching videos from storage:', storageError);
       }
+
+      console.log('Storage files:', storageFiles);
 
       // Fetch quizzes for all courses
       const { data: quizzesData, error: quizzesError } = await supabase
@@ -157,16 +158,27 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         const courseEnrollments = enrollmentsData?.filter(e => e.course_id === course.id) || [];
         const enrolledStudents = courseEnrollments.map(e => e.student_id);
 
-        // Get videos for this course
-        const courseVideos = videosData?.filter(v => v.module?.course_id === course.id) || [];
-        const lectures: Lecture[] = courseVideos.map(video => ({
-          id: video.id,
-          title: video.title,
-          description: video.description || '',
-          videoUrl: video.video_url,
-          duration: video.duration,
-          resources: [] // Will be populated separately if needed
-        }));
+        // Get videos for this course from storage
+        const courseVideos = storageFiles?.filter(file => {
+          // Check if the file belongs to this course's instructor
+          return file.name.startsWith(course.instructor_id);
+        }) || [];
+
+        const lectures: Lecture[] = courseVideos.map((file, index) => {
+          // Get public URL for the video
+          const { data: publicUrl } = supabase.storage
+            .from('course_videos')
+            .getPublicUrl(file.name);
+
+          return {
+            id: file.name,
+            title: `Lecture ${index + 1}`,
+            description: `Video lecture for ${course.title}`,
+            videoUrl: publicUrl.publicUrl,
+            duration: undefined,
+            resources: []
+          };
+        });
 
         // Get quizzes for this course
         const courseQuizzes = quizzesData?.filter(q => q.course_id === course.id) || [];
