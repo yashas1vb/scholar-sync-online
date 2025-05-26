@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from '@/integrations/supabase/client';
@@ -164,17 +165,22 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
           return file.name.startsWith(course.instructor_id);
         }) || [];
 
+        console.log(`Found ${courseVideos.length} videos for course ${course.title}:`, courseVideos);
+
         const lectures: Lecture[] = courseVideos.map((file, index) => {
           // Get public URL for the video
-          const { data: publicUrl } = supabase.storage
+          const { data: publicUrlData } = supabase.storage
             .from('course_videos')
             .getPublicUrl(file.name);
+
+          const videoUrl = publicUrlData.publicUrl;
+          console.log(`Generated video URL for ${file.name}:`, videoUrl);
 
           return {
             id: file.name,
             title: `Lecture ${index + 1}`,
             description: `Video lecture for ${course.title}`,
-            videoUrl: publicUrl.publicUrl,
+            videoUrl: videoUrl,
             duration: undefined,
             resources: []
           };
@@ -440,6 +446,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
 
   const markVideoAsWatched = async (videoId: string, studentId: string): Promise<void> => {
     try {
+      console.log('Marking video as watched:', { videoId, studentId });
       const { error } = await supabase
         .from('video_progress')
         .upsert({
@@ -449,8 +456,10 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         });
 
       if (error) {
+        console.error('Error marking video as watched:', error);
         throw error;
       }
+      console.log('Video marked as watched successfully');
     } catch (error) {
       console.error('Error marking video as watched:', error);
       throw error;
@@ -459,12 +468,14 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
 
   const getVideoProgress = async (studentId: string): Promise<Record<string, boolean>> => {
     try {
+      console.log('Getting video progress for student:', studentId);
       const { data, error } = await supabase
         .from('video_progress')
         .select('video_id, watched_seconds')
         .eq('student_id', studentId);
 
       if (error) {
+        console.error('Error fetching video progress:', error);
         throw error;
       }
 
@@ -473,6 +484,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         progress[item.video_id] = item.watched_seconds > 0;
       });
 
+      console.log('Video progress:', progress);
       return progress;
     } catch (error) {
       console.error('Error fetching video progress:', error);
@@ -488,7 +500,15 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
       const progress = await getVideoProgress(studentId);
       const completedLectures = course.lectures.filter(lecture => progress[lecture.id]);
       
-      return completedLectures.length === course.lectures.length;
+      const isCompleted = completedLectures.length === course.lectures.length;
+      console.log('Course completion check:', { 
+        courseId, 
+        totalLectures: course.lectures.length, 
+        completedLectures: completedLectures.length, 
+        isCompleted 
+      });
+      
+      return isCompleted;
     } catch (error) {
       console.error('Error checking course completion:', error);
       return false;
