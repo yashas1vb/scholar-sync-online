@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Course } from '@/context/CourseContext';
 import { Button } from "@/components/ui/button";
@@ -33,33 +32,43 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Fetch lectures from Supabase
   useEffect(() => {
     const fetchLectures = async () => {
       try {
-        // For demonstration, we'll fetch all videos
-        // In a real implementation, you would filter by module_id related to the course
-        const { data, error } = await supabase
-          .from('videos')
-          .select('*')
-          .order('position', { ascending: true });
-        
-        if (error) {
-          throw error;
+        // 1. List all folders at the root
+        const { data: folders } = await supabase.storage.from('course_videos').list('', { limit: 1000, offset: 0 });
+        let allFiles = [];
+        for (const folder of folders) {
+          if (!folder.name) continue;
+          // 2. For each folder, list all files inside
+          const { data: files } = await supabase.storage.from('course_videos').list(folder.name, { limit: 1000, offset: 0 });
+          for (const file of files) {
+            if (file.id) {
+              allFiles.push({
+                ...file,
+                fullPath: `${folder.name}/${file.name}`,
+              });
+            }
+          }
         }
-        
-        // Transform the data to match our lecture interface
-        const fetchedLectures = data.map(video => ({
-          id: video.id,
-          title: video.title,
-          description: video.description,
-          video_url: video.video_url,
-          position: video.position,
-          resources: [], // We would fetch resources in a real implementation
-          module_id: video.module_id
+        // 3. Filter for this course's instructor (if needed) and video files
+        //    (You may need to pass instructorId as a prop or get it from course)
+        const instructorId = course.instructorId;
+        const courseVideos = allFiles.filter(file =>
+          file.fullPath.startsWith(instructorId) && file.fullPath.match(/\.(mp4|mov|avi|webm)$/i)
+        );
+        // 4. Map to lecture objects
+        const fetchedLectures = courseVideos.map((file, index) => ({
+          id: file.fullPath,
+          title: `Lecture ${index + 1}`,
+          description: `Video lecture for ${course.title}`,
+          video_url: file.fullPath,
+          position: index,
+          resources: [],
+          module_id: null,
         }));
-        
         setLectures(fetchedLectures);
       } catch (error) {
         console.error('Error fetching lectures:', error);
@@ -72,10 +81,10 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
         setIsLoading(false);
       }
     };
-    
+
     fetchLectures();
-  }, [toast]);
-  
+  }, [toast, course]);
+
   const addLecture = async () => {
     setIsDialogOpen(false);
     // The lecture will be added via the LectureForm component
@@ -85,11 +94,11 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
         .from('videos')
         .select('*')
         .order('position', { ascending: true });
-      
+
       if (error) {
         throw error;
       }
-      
+
       // Transform the data to match our lecture interface
       const fetchedLectures = data.map(video => ({
         id: video.id,
@@ -100,13 +109,13 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
         resources: [], // We would fetch resources in a real implementation
         module_id: video.module_id
       }));
-      
+
       setLectures(fetchedLectures);
     } catch (error) {
       console.error('Error refreshing lectures:', error);
     }
   };
-  
+
   const removeLecture = async (lectureId: string) => {
     if (window.confirm("Are you sure you want to delete this lecture?")) {
       try {
@@ -114,13 +123,13 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
           .from('videos')
           .delete()
           .eq('id', lectureId);
-        
+
         if (error) {
           throw error;
         }
-        
+
         setLectures(lectures.filter(l => l.id !== lectureId));
-        
+
         toast({
           title: "Lecture removed",
           description: "The lecture has been removed from your course",
@@ -151,14 +160,14 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
             <DialogHeader>
               <DialogTitle>Add New Lecture</DialogTitle>
             </DialogHeader>
-            <LectureForm 
-              courseId={course.id} 
-              onSuccess={addLecture} 
+            <LectureForm
+              courseId={course.id}
+              onSuccess={addLecture}
             />
           </DialogContent>
         </Dialog>
       </div>
-      
+
       {isLoading ? (
         <div className="text-center py-12">
           <Loader2 size={40} className="mx-auto animate-spin text-gray-400" />
@@ -167,8 +176,8 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
       ) : lectures.length > 0 ? (
         <div className="space-y-3">
           {lectures.map((lecture) => (
-            <div 
-              key={lecture.id} 
+            <div
+              key={lecture.id}
               className="border rounded-md p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
             >
               <div className="flex items-center gap-3">
@@ -183,14 +192,14 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
                   </p>
                 </div>
               </div>
-              
+
               <div className="flex space-x-2">
                 <Button variant="outline" size="sm">
                   <Pencil size={16} className="mr-2" />
                   Edit
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => removeLecture(lecture.id)}
                 >
@@ -220,9 +229,9 @@ const CourseLectureManager: React.FC<CourseLectureManagerProps> = ({ course }) =
               <DialogHeader>
                 <DialogTitle>Add New Lecture</DialogTitle>
               </DialogHeader>
-              <LectureForm 
-                courseId={course.id} 
-                onSuccess={addLecture} 
+              <LectureForm
+                courseId={course.id}
+                onSuccess={addLecture}
               />
             </DialogContent>
           </Dialog>

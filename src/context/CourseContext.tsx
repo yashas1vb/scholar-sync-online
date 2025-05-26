@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from '@/integrations/supabase/client';
@@ -67,7 +66,7 @@ interface CourseContextType {
 const defaultContext: CourseContextType = {
   courses: [],
   isLoading: false,
-  fetchCourses: async () => {},
+  fetchCourses: async () => { },
   createCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '', category: '' }),
   updateCourse: async () => ({ id: '', title: '', description: '', imageUrl: '', instructorId: '', instructorName: '', lectures: [], quizzes: [], enrolledStudents: [], createdAt: '', category: '' }),
   deleteCourse: async () => { },
@@ -124,18 +123,23 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
       }
 
       // Fetch videos from storage bucket and match with course data
-      const { data: storageFiles, error: storageError } = await supabase.storage
-        .from('course_videos')
-        .list('', {
-          limit: 1000,
-          offset: 0
-        });
+      const { data: folders } = await supabase.storage.from('course_videos').list('', { limit: 1000, offset: 0 });
 
-      if (storageError) {
-        console.error('Error fetching videos from storage:', storageError);
+      let allFiles = [];
+      for (const folder of folders) {
+        if (!folder.name) continue;
+        const { data: files } = await supabase.storage.from('course_videos').list(folder.name, { limit: 1000, offset: 0 });
+        for (const file of files) {
+          if (file.id) {
+            allFiles.push({
+              ...file,
+              fullPath: `${folder.name}/${file.name}`,
+            });
+          }
+        }
       }
 
-      console.log('Storage files:', storageFiles);
+      console.log('Storage files:', allFiles);
 
       // Fetch quizzes for all courses
       const { data: quizzesData, error: quizzesError } = await supabase
@@ -160,24 +164,17 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
         const enrolledStudents = courseEnrollments.map(e => e.student_id);
 
         // Get videos for this course from storage
-        const courseVideos = storageFiles?.filter(file => {
-          // Check if the file belongs to this course's instructor
-          return file.name.startsWith(course.instructor_id);
-        }) || [];
-
+        const courseVideos = allFiles.filter(file => file.fullPath.startsWith(course.instructor_id) && file.fullPath.match(/\.(mp4|mov|avi|webm)$/i));
         console.log(`Found ${courseVideos.length} videos for course ${course.title}:`, courseVideos);
-
         const lectures: Lecture[] = courseVideos.map((file, index) => {
           // Get public URL for the video
           const { data: publicUrlData } = supabase.storage
             .from('course_videos')
-            .getPublicUrl(file.name);
-
+            .getPublicUrl(file.fullPath);
           const videoUrl = publicUrlData.publicUrl;
-          console.log(`Generated video URL for ${file.name}:`, videoUrl);
-
+          console.log(`Generated video URL for ${file.fullPath}:`, videoUrl);
           return {
-            id: file.name,
+            id: file.fullPath,
             title: `Lecture ${index + 1}`,
             description: `Video lecture for ${course.title}`,
             videoUrl: videoUrl,
@@ -240,7 +237,7 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
     setIsLoading(true);
     try {
       console.log('Creating course with data:', courseData);
-      
+
       if (!user) {
         throw new Error('User must be logged in to create courses');
       }
@@ -280,12 +277,12 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
       };
 
       setCourses(prev => [...prev, newCourse]);
-      
+
       toast({
         title: 'Course created',
         description: 'Your course has been created successfully',
       });
-      
+
       return newCourse;
     } catch (error) {
       console.error('Error creating course:', error);
@@ -499,15 +496,15 @@ export const CourseProvider = ({ children }: CourseProviderProps) => {
 
       const progress = await getVideoProgress(studentId);
       const completedLectures = course.lectures.filter(lecture => progress[lecture.id]);
-      
+
       const isCompleted = completedLectures.length === course.lectures.length;
-      console.log('Course completion check:', { 
-        courseId, 
-        totalLectures: course.lectures.length, 
-        completedLectures: completedLectures.length, 
-        isCompleted 
+      console.log('Course completion check:', {
+        courseId,
+        totalLectures: course.lectures.length,
+        completedLectures: completedLectures.length,
+        isCompleted
       });
-      
+
       return isCompleted;
     } catch (error) {
       console.error('Error checking course completion:', error);
